@@ -21,11 +21,17 @@
 
 int sched_flag=0;
 char * file=NULL;
-
+pthread_t t_serve;
+struct request
+{
+	int acceptfd;
+	int size;
+	char *file_name;
+} r;
 // queue function declarations;
 
-void insertion(int, int);
-int extract_element();
+void insertion(int,char*, int);
+struct request extract_element();
 void removesjf();
 void display();
 void print_help_options();
@@ -37,22 +43,26 @@ void error(const char *msg)
     exit(1);
 }
 
+
 //queue structre
 struct node
 {
 	int acceptfd;
 	int size;
+	char *file_name;
 	struct node *link;
 	}*new,*temp,*p,*front=NULL,*rear=NULL;
 typedef struct node N;
 
 // queue functions
-void insertion(int afd,int size)
+void insertion(int afd,char * file_name,int size)
 {
 
 	new=(N*)malloc(sizeof(N));
 	int n;
 	new->acceptfd=afd;
+	new->file_name=file_name;
+	new->size=size;
 	new->link=NULL;
 	if(front==NULL)
 		front=new;
@@ -63,18 +73,22 @@ void insertion(int afd,int size)
 	
 	}
 
- int extract_element()
+ struct request extract_element()
 {
 
 	if(front==NULL)
 		printf("\nQueue is empty");
 	else
-	{
+	{	
+		struct request r1;
 		p=front;
 		printf("\nExtracted element is : %d",p->acceptfd);
 		front=front->link;
-		return p->acceptfd;
+		r1.acceptfd=p->acceptfd;
+		r1.file_name=p->file_name;		
+		r1.size=p->size;
 		free(p);
+		return(r1);
 	}
 }
  
@@ -132,46 +146,54 @@ void removesjf(int num)
 
 void *thread_serve(void *arg)
 {
-unsigned  int acceptfd= *((unsigned int *)arg);
+  printf("\nentered serving thread\n");
+struct request r= *((struct request *)arg);
+printf("\n in  serving thread copied structure\n");
+
   char           in_buf[BUF_SIZE];      
   char           out_buf[BUF_SIZE];
   char           *file_name;                 // File name
   file_name=malloc(sizeof(char *));
+  int acceptfd;
   unsigned int   fh;                         // File handle (file descriptor)
   unsigned int   buf_len;                    // Buffer length for file reads
   unsigned int   retcode;   
 
+printf("\n in  serving thread before copying variables\n");
+  acceptfd=r.acceptfd;
+  file_name=r.file_name;
+printf("\n in  serving thread after copying variables\n");
                 // Return code  
- retcode = recv(acceptfd, in_buf, BUF_SIZE, 0);
+/* retcode = recv(acceptfd, in_buf, BUF_SIZE, 0);
             // Input buffer for GET resquest
             // Output buffer for HTML response
 
  printf("\nin serving thread before getting file name\n");
       /* if receive error --- */
-      if (retcode < 0)
+   /*   if (retcode < 0)
 	{ 
 		  printf("recv error detected ...\n"); 
 	}
      
       /* if HTTP command successfully received --- */
-      else
+/*      else
       {    
         /* Parse out the filename from the GET request --- */
-        strtok(in_buf, " ");
-        file_name = strtok(NULL, " ");	
-	printf("\nin serving thread after getting file name\n");	//logging to file
-	FILE * file_des=fopen(file,"a");
-	
-	fprintf(file_des,"%s",&file_name[1]);
+/*        strtok(in_buf, " ");
+        file_name = strtok(NULL, " ");	*/
+	printf("\nin serving thread before opening file\n");	//logging to file
+	FILE * file_des=fopen(file,"a"); 
+	printf("\n in  serving thread \n");
+	fprintf(file_des,"%s\n",&file_name[1]); 
 	
 	fclose(file_des);
 	 printf("\nin serving thread finished logging\n"); 
  	printf("\nin serving thread file name is %s\n",file_name);
         
-      }
+      
  
 	
-	if(file_name!=NULL)
+//	if(file_name!=NULL)
 
 	{	
 
@@ -233,6 +255,7 @@ void *thread_scheduler(void *arg)
 {
 	unsigned int schedalg=*((unsigned int*)arg);
 	int acceptfd,n;
+	struct request r;
 	if(schedalg==0)
 	{	
 		while(1)
@@ -240,14 +263,15 @@ void *thread_scheduler(void *arg)
 			if(front!=NULL)
 			{	
 				printf("\nin sched thread before extracting element\n");		
-				acceptfd=extract_element();
+				r=extract_element();
 				// sleep function
 				// call serving thread from thread pool
 				/* n = write(acceptfd,"I got your message from scheduler",33);
      				if (n < 0) error("ERROR writing to socket");
      				close(n); */
 				printf("\nin sched thread before sending to serving thread\n");
-				thread_serve(&acceptfd);		
+				pthread_create(&t_serve,NULL,&thread_serve,&r);	
+				//thread_serve(&r);		
 			}
 			else continue;
 		}
@@ -255,8 +279,8 @@ void *thread_scheduler(void *arg)
 	else
 	{
 	//code for SJF scheduling algorithm
-		
 		int shortestjob_fd=0;
+		int min;
 		int a,b;
 		while(1)			
 		{	
@@ -268,22 +292,20 @@ void *thread_scheduler(void *arg)
 			else
 			
 			{
+				min=temp->size;
 				while(temp->link!=NULL)  //should modify
 				{
-					a=(temp->size);	
+					
 					b=temp->link->size;
-					if(a<b)
+					if(min<=b)
 					{
 						shortestjob_fd=temp->acceptfd;
 					}		
-					else if(a>b)
+					else if(min>b)
 					{			
+						min=temp->link->size;						
 						shortestjob_fd=temp->link->acceptfd;
 					}
-					else
-					{
-						shortestjob_fd=temp->acceptfd;		
-					}			
 					printf("\n %d",a);
 					temp=temp->link;
 				}
@@ -323,6 +345,14 @@ void *thread_listen(void *arg)
 	char request_buffer[1024];
 
 
+
+	int retcode;
+	off_t file_size;
+	char in_buf[BUF_SIZE];
+	char *file_name;
+	
+
+
 	
 /*	struct sockaddr_in cli_addr,serv_addr;
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);	
@@ -345,17 +375,62 @@ void *thread_listen(void *arg)
 		acceptfd= accept(sockfd,(struct sockaddr *) &cli_addr,&clilen);
 		if (acceptfd < 0) 
           	printf("ERROR on accept");
-		ids2=acceptfd;
-		//pthread_create(&t_serve[i],NULL,&thread_serve,&ids2);	
+
+
+
+
 		
-		//find the size of the requested file
+		retcode = recv(acceptfd, in_buf, BUF_SIZE, 0);
+            // Input buffer for GET resquest
+            // Output buffer for HTML response
+		printf("\nin listening thread before getting file name\n");
+		/* if receive error --- */
+		if (retcode < 0)
+		{ 
+			printf("recv error detected ...\n"); 
+		}
+     
+		/* if HTTP command successfully received --- */
+    		else
+		{    
+		/* Parse out the filename from the GET request --- */
+			strtok(in_buf, " ");
+		        file_name = strtok(NULL, " ");			
+		}
+
+		if(file_name!=NULL)
+		{
 
 
-		//retval = recv(acceptfd, request_buffer, BUFSIZE, 0);						
-		//printf("return value is %d",retval);
-		printf("\nin listening thread after accepting and before inserting into queue\n");
-		insertion(acceptfd,size);
-		//printf("newsockfd in thread is : %d",newsockfd);
+			//ids2=acceptfd;
+			//pthread_create(&t_serve[i],NULL,&thread_serve,&ids2);	
+			
+			//off_t fsize(const char *filename) 
+			
+			    struct stat st; 
+
+			    if (stat(file_name, &st) == 0)
+			     file_size=st.st_size;
+
+			printf(" size of file %s is %zd",file_name,file_size);
+
+			
+
+			//find the size of the requested file
+
+
+			//retval = recv(acceptfd, request_buffer, BUFSIZE, 0);						
+			//printf("return value is %d",retval);
+			printf("\nin listening thread after accepting and before inserting into queue\n");
+			insertion(acceptfd,file_name,file_size);
+			//printf("newsockfd in thread is : %d",newsockfd);
+		}
+		else
+		{
+			continue;
+		}		
+
+
 	}				
 
 
@@ -464,14 +539,7 @@ printf( "\n debug : %d, help: %d, log: %d, file name : %s port num : %d, dir : %
 	
 
 
-
-
-
-
-
-	
-	//void * arg;	
-	//int portno;
+//int portno;
      /*	int i;
 	for(i=0;i<10;i++)
 	{
