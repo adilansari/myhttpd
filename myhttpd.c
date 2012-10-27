@@ -22,15 +22,17 @@
 int sched_flag=0;
 char * file=NULL;
 pthread_t t_serve;
+pthread_mutex_t qmutex = PTHREAD_MUTEX_INITIALIZER;
 struct request
 {
 	int acceptfd;
 	int size;
-	char *file_name;
-} r;
+	char file_name[200];
+}; 
 // queue function declarations;
 
-void insertion(int,char*, int);
+void insertion(int,char*, int);	
+//void insertion(int,string, int);
 struct request extract_element();
 void removesjf();
 void display();
@@ -47,52 +49,15 @@ void error(const char *msg)
 //queue structre
 struct node
 {
-	int acceptfd;
-	int size;
-	char *file_name;
+	struct request r;	
+	//int acceptfd;
+	//int size;
+	//char *file_name;
 	struct node *link;
 	}*new,*temp,*p,*front=NULL,*rear=NULL;
 typedef struct node N;
 
-// queue functions
-void insertion(int afd,char * file_name,int size)
-{
-
-	new=(N*)malloc(sizeof(N));
-	int n;
-	new->acceptfd=afd;
-	new->file_name=file_name;
-	new->size=size;
-	new->link=NULL;
-	if(front==NULL)
-		front=new;
-	else
-		rear->link=new;
-		rear=new;
-	printf("\n inserted request into queue");
-	
-	}
-
- struct request extract_element()
-{
-
-	if(front==NULL)
-		printf("\nQueue is empty");
-	else
-	{	
-		struct request r1;
-		p=front;
-		printf("\nExtracted element is : %d",p->acceptfd);
-		front=front->link;
-		r1.acceptfd=p->acceptfd;
-		r1.file_name=p->file_name;		
-		r1.size=p->size;
-		free(p);
-		return(r1);
-	}
-}
- 
- void display()
+void display()
 {
 	if(front==NULL)
 		printf("\nQueue is empty");
@@ -103,12 +68,59 @@ void insertion(int afd,char * file_name,int size)
 		temp=front;
 		while(temp!=NULL)
 		{
-			a=(temp->acceptfd);			
-			printf("\n %d",a);
+			a=(temp->r.acceptfd);			
+			printf("\n acceptfd is %d, file name is %s, address of file name is %d file size is %d",a,temp->r.file_name,*(temp->r.file_name),temp->r.size);
 			temp=temp->link;
 		}
 	}
 } 
+
+// queue functions
+void insertion(int afd,char *f,int size)
+{
+
+	
+	new=(N*)malloc(sizeof(N));
+	int n;
+	char a[200];
+	strcpy(a,f);
+	new->r.acceptfd=afd;
+	//new->r.file_name=malloc(sizeof(char *));
+	//strcpy(new->r.file_name,f);
+	strcpy(new->r.file_name,a);
+	//new->r.file_name=a;
+	new->r.size=size;
+	new->link=NULL;
+	if(front==NULL)
+		front=new;
+	else
+		rear->link=new;
+		rear=new;
+	printf("\n inserted request into queue");
+	display();	
+		
+}
+
+ struct request extract_element()
+{
+
+	if(front==NULL)
+		printf("\nQueue is empty");
+	else
+	{	
+		struct request r1;
+		p=front;
+		printf("\nExtracted element is : %d",p->r.acceptfd);
+		front=front->link;
+		r1.acceptfd=p->r.acceptfd;
+		strcpy(r1.file_name,p->r.file_name);		
+		r1.size=p->r.size;
+		free(p);
+		return(r1);
+	}
+}
+ 
+
 
 void removesjf(int num)
 { 
@@ -122,7 +134,7 @@ void removesjf(int num)
 		temp=front;
 		while(temp!=NULL)
 		{ 
-			if(temp->acceptfd==num)
+			if(temp->r.acceptfd==num)
 			{ 
 				if(temp==front) /* First Node case */
 				front=temp->link; /* shifted the header node */
@@ -157,7 +169,8 @@ printf("\n in  serving thread copied structure\n");
   int acceptfd;
   unsigned int   fh;                         // File handle (file descriptor)
   unsigned int   buf_len;                    // Buffer length for file reads
-  unsigned int   retcode;   
+  unsigned int   retcode;  
+  int m; 
 
 printf("\n in  serving thread before copying variables\n");
   acceptfd=r.acceptfd;
@@ -201,6 +214,8 @@ printf("\n in  serving thread after copying variables\n");
 	printf("\nin serving thread opening file\n");
 	 /* Open the requested file (start at 2nd char to get rid of leading "\") */
         fh = open(&file_name[1], O_RDONLY, S_IREAD | S_IWRITE);
+	
+ 	memset(out_buf, 0, sizeof(out_buf));
    
         /* Generate and send the response (404 if could not open the file) */
         if (fh == -1)
@@ -255,25 +270,40 @@ void *thread_scheduler(void *arg)
 {
 	unsigned int schedalg=*((unsigned int*)arg);
 	int acceptfd,n;
-	struct request r;
+	struct request r2;
 	if(schedalg==0)
 	{	
 		while(1)
-		{
+		{	
+						
+			
 			if(front!=NULL)
 			{	
-				printf("\nin sched thread before extracting element\n");		
-				r=extract_element();
+				
+				printf("\nin sched thread before extracting element\n");
+				printf("\nscheduler locking mutex\n");		
+				pthread_mutex_lock(&qmutex);
+				r2=extract_element();
+				pthread_mutex_unlock(&qmutex);
 				// sleep function
+				printf("\nscheduler unlocking mutex\n");
 				// call serving thread from thread pool
 				/* n = write(acceptfd,"I got your message from scheduler",33);
      				if (n < 0) error("ERROR writing to socket");
      				close(n); */
 				printf("\nin sched thread before sending to serving thread\n");
-				pthread_create(&t_serve,NULL,&thread_serve,&r);	
-				//thread_serve(&r);		
+				thread_serve(&r2);
+				//pthread_create(&t_serve,NULL,&thread_serve,&r);	
+				//thread_serve(&r);
+						
 			}
-			else continue;
+
+			else 
+			{
+				
+							
+				continue;
+			}			
 		}
 	}
 	else
@@ -283,28 +313,28 @@ void *thread_scheduler(void *arg)
 		int min;
 		int a,b;
 		while(1)			
-		{	
+		{	pthread_mutex_lock(&qmutex);
 			temp=front;
 			if (temp==NULL)
 				continue;
 			else if(temp->link==NULL) 
-				shortestjob_fd=temp->acceptfd;
+				shortestjob_fd=temp->r.acceptfd;
 			else
 			
 			{
-				min=temp->size;
+				min=temp->r.size;
 				while(temp->link!=NULL)  //should modify
 				{
 					
-					b=temp->link->size;
+					b=temp->link->r.size;
 					if(min<=b)
 					{
-						shortestjob_fd=temp->acceptfd;
+						shortestjob_fd=temp->r.acceptfd;
 					}		
 					else if(min>b)
 					{			
-						min=temp->link->size;						
-						shortestjob_fd=temp->link->acceptfd;
+						min=temp->link->r.size;						
+						shortestjob_fd=temp->link->r.acceptfd;
 					}
 					printf("\n %d",a);
 					temp=temp->link;
@@ -317,6 +347,7 @@ void *thread_scheduler(void *arg)
 			n = write(acceptfd,"I got your message from scheduler",33);
 			if (n < 0) error("ERROR writing to socket");
 			close(n);			
+			pthread_mutex_unlock(&qmutex);
 		}
 	
 	}
@@ -349,7 +380,13 @@ void *thread_listen(void *arg)
 	int retcode;
 	off_t file_size;
 	char in_buf[BUF_SIZE];
-	char *file_name;
+	//char fln[200];
+	//char *file_name;
+	char *fname=malloc(sizeof(char *));	
+	struct stat st; 
+	int k,j;
+	
+	int l;
 	
 
 
@@ -371,15 +408,16 @@ void *thread_listen(void *arg)
 	while(1)     
 	//for(i=0;i<5;i++)	//replace for loop with infinte while loop
 	{	
+		
 		printf("\nin listening thread before accept\n");
 		acceptfd= accept(sockfd,(struct sockaddr *) &cli_addr,&clilen);
 		if (acceptfd < 0) 
           	printf("ERROR on accept");
-
-
-
-
 		
+		
+		char *file_name=malloc(sizeof(char *));
+
+		 memset(in_buf, 0, sizeof(in_buf));
 		retcode = recv(acceptfd, in_buf, BUF_SIZE, 0);
             // Input buffer for GET resquest
             // Output buffer for HTML response
@@ -407,14 +445,24 @@ void *thread_listen(void *arg)
 			
 			//off_t fsize(const char *filename) 
 			
-			    struct stat st; 
 
-			    if (stat(file_name, &st) == 0)
-			     file_size=st.st_size;
+				
+			
+			k=1,j=0; 
+			while(k<strlen(file_name))
+			{
+				fname[j]=file_name[k];
+				k++;
+				j++;			
+			}		
+			    
+
+			    if (stat(fname, &st) == 0)
+			    file_size=st.st_size;
 
 			printf(" size of file %s is %zd",file_name,file_size);
 
-			
+			//strcpy(fln,file_name);
 
 			//find the size of the requested file
 
@@ -422,7 +470,11 @@ void *thread_listen(void *arg)
 			//retval = recv(acceptfd, request_buffer, BUFSIZE, 0);						
 			//printf("return value is %d",retval);
 			printf("\nin listening thread after accepting and before inserting into queue\n");
+			//pthread_mutex_lock(&qmutex);
 			insertion(acceptfd,file_name,file_size);
+			//printf("\n acceptfd is %d, file name is %s, file name is %zd",acceptfd,file_name,file_size);
+			printf("inserted ino queue");
+			//pthread_mutex_unlock(&qmutex);
 			//printf("newsockfd in thread is : %d",newsockfd);
 		}
 		else
@@ -456,11 +508,13 @@ int main(int argc, char *args[])
 	char *dir;
 	file=malloc(sizeof(char *));
 	dir=malloc(sizeof(char *));
+	
+	
 
-	int portnum=8080,time=0,threadnum;
+	int portnum=8080,threadnum,sleep_time=60;
 	int i;
 	int debug_flag=0,help_flag=0,log_flag=0,dir_flag=0,time_flag,threadnum_flag=0;
-
+	
 	// Parser code
 	for(i=0;i<argc;i++)
 	{
@@ -491,7 +545,7 @@ int main(int argc, char *args[])
 		else if(strcmp(args[i],"-t")==0)
 		{
 			time_flag=1;		
-		 	time=atoi(args[i+1]);
+		 	sleep_time=atoi(args[i+1]);
 		}
 		else if(strcmp(args[i],"-l")==0)
 		{
@@ -510,7 +564,7 @@ int main(int argc, char *args[])
 	
 	}
 
-printf( "\n debug : %d, help: %d, log: %d, file name : %s port num : %d, dir : %d dir name: %s, time :%d ,thread num : %d, sched : %d",debug_flag,help_flag,log_flag,file,portnum,dir_flag,dir,time,threadnum,sched_flag);	
+printf( "\n debug : %d, help: %d, log: %d, file name : %s port num : %d, dir : %d dir name: %s, time :%d ,thread num : %d, sched : %d",debug_flag,help_flag,log_flag,file,portnum,dir_flag,dir,sleep_time,threadnum,sched_flag);	
 	//Parser code ends
 
 	if(help_flag==1)
@@ -518,7 +572,13 @@ printf( "\n debug : %d, help: %d, log: %d, file name : %s port num : %d, dir : %
 		print_help_options();
 		exit(1);
 	}
-
+	else if(dir_flag==1)
+	{
+		if(chdir(dir)<0)
+			perror("\ndirectory doesnt exist");
+			exit(1);
+	}
+	
 
 
 	
@@ -556,13 +616,15 @@ printf( "\n debug : %d, help: %d, log: %d, file name : %s port num : %d, dir : %
      
 	ids=sockfd;
 	printf("\n before creating scheduler thread");
-	pthread_create(&t_scheduler,NULL,&thread_scheduler,&sched_flag);
 	printf("\nbefore creating thread sockfd is %d",ids);
 	pthread_create(&t_listener,NULL,&thread_listen,&ids);
+	sleep(sleep_time);		// putting scheduler to sleep
+	pthread_create(&t_scheduler,NULL,&thread_scheduler,&sched_flag);
         pthread_join(t_listener,NULL);
 	pthread_join(t_scheduler,NULL);
 	printf("\nafter join in main");
 	display();
+	close(sockfd);
 	return 0;
 }
 
@@ -571,7 +633,6 @@ void print_help_options()
 {
 printf("\n−d : Enter debugging mode. That is, do not daemonize, only accept one connection at a \ntime and enable logging to stdout. Without this option, the web server should run as a daemon process in the background. \n−h : Print a usage summary with all options and exit. \n−l file : Log all requests to the given file. See LOGGING for details.\n−p port : Listen on the given port. If not provided, myhttpd will listen on port 8080. \n−r dir : Set the root directory for the http server to dir. \n−t time : Set the queuing time to time seconds. The default should be 60 seconds. \n−n threadnum: Set number of threads waiting ready in the execution thread pool to threadnum. \nThe default should be 4 execution threads. \n−s sched: Set the scheduling policy. It can be either FCFS or SJF. The default will be FCFS.");
 }
-
 
 
 
