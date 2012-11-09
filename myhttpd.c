@@ -1,28 +1,28 @@
 
-#include <sys/types.h> 
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include<pthread.h>
-#include<malloc.h>
 #include<fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/types.h> 
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include<pthread.h>
+#include<malloc.h>
 #include <fcntl.h>        
 #include <sys/stat.h> 
 #include<time.h>
-
+#include<semaphore.h>
 #define BUF_SIZE 1024
+
 #define OK_IMAGE    "HTTP/1.0 200 OK\nContent-Type:image/gif\n\n"
 #define OK_TEXT     "HTTP/1.0 200 OK\nContent-Type:text/html\n\n"
 #define NOTOK_404   "HTTP/1.0 404 Not Found\nContent-Type:text/html\n\n"
 #define MESS_404    "<html><body><h1>FILE NOT FOUND</h1></body></html>"
 
-
-//global variables
+sem_t sem;
 int free_thread;
-int sched_flag=0,debug_flag=0;
+int sched_flag=0,debug_flag=0,log_flag=0;
 char * file=NULL;
 pthread_t t_serve;
 pthread_mutex_t qmutex = PTHREAD_MUTEX_INITIALIZER;
@@ -40,6 +40,7 @@ struct request
 }r2; 
 // queue function declarations;
 void insertion(int,char*, int, unsigned int,char*,char*);	
+//void insertion(int,string, int);
 struct request extract_element();
 struct request removesjf();
 void display();
@@ -47,18 +48,15 @@ void print_help_options();
 
 
 
+
+
 //queue structre
 struct node
 {
 	struct request r;	
-	//int acceptfd;
-	//int size;
-	//char *file_name;
 	struct node *link;
-	}*new,*temp,*p,*front=NULL,*rear=NULL;
+}*new,*temp,*p,*front=NULL,*rear=NULL;
 typedef struct node N;
-
-// end of global variable declaration
 
 void display()
 {
@@ -67,6 +65,7 @@ void display()
 	else
 	{
 		int a;
+		
 		temp=front;
 		while(temp!=NULL)
 		{
@@ -91,8 +90,6 @@ void insertion(int afd,char *f,int size,unsigned int ip, char * time_arrival,cha
 	strcpy(b,time_arrival);
 	strcpy(c,in_buf);
 	new->r.acceptfd=afd;
-	//new->r.file_name=malloc(sizeof(char *));
-	//strcpy(new->r.file_name,f);
 	strcpy(new->r.file_name,a);
 	new->r.cli_ipaddr=ip;
 	strcpy(new->r.time_arrival,b);
@@ -106,7 +103,7 @@ void insertion(int afd,char *f,int size,unsigned int ip, char * time_arrival,cha
 	else
 		rear->link=new;
 		rear=new;
-	printf("\n inserted request into queue");
+	//printf("\n inserted request into queue");
 	display();	
 		
 }
@@ -115,12 +112,12 @@ void insertion(int afd,char *f,int size,unsigned int ip, char * time_arrival,cha
 {
 
 	if(front==NULL)
-		printf("\nQueue is empty");
+		printf("\nempty queue");
 	else
 	{	
 		struct request r1;
 		p=front;
-		printf("\nExtracted element is : %d",p->r.acceptfd);
+		//printf("\n element is : %d",p->r.acceptfd);
 		front=front->link;
 		r1.acceptfd=p->r.acceptfd;
 		strcpy(r1.file_name,p->r.file_name);		
@@ -137,7 +134,7 @@ struct request removesjf(int num)
 	printf("\nentered removesjf");
 	if(front==NULL)
 	{
-		 printf("\n\nlink list is empty");
+		 printf("\n\nempty list");
 	}
 	else
 	{
@@ -166,6 +163,7 @@ struct request removesjf(int num)
 
 // end of queue functions
 
+
 // thread pool function
 
 void *thread_serve()
@@ -173,28 +171,18 @@ void *thread_serve()
 	while(1)
 	{		
 		
-		printf("\nentered serving thread\n");		
+		//printf("\nentered serving thread\n");		
 		pthread_mutex_lock(&sthread_mutex);		
 		pthread_cond_wait(&cond_var,&sthread_mutex);
 		
-		printf("\ngot signal\n");
+		//printf("\ngot signal\n");
 		//wait on condition mutex
+
+		struct request r=r2;
 		pthread_mutex_unlock(&sthread_mutex);
-		struct request r;
+		//printf("\n serving thread unlocked sthread_mutex");
 		
-		r.acceptfd=r2.acceptfd;
-		r.size=r2.size;
-		r.cli_ipaddr=r2.cli_ipaddr;
-		strcpy(r.time_arrival,r2.time_arrival);
-		strcpy(r.in_buf,r2.in_buf);
-
-
-		
-
-		
-		pthread_mutex_unlock(&sthread_mutex);		
-		printf("\n serving thread unlocked sthread_mutex");
-
+		//printf("\n is acceptfd %d, file name is %s, file size is %d , ip addr is %u, request is %s,time is %s",a,temp->r.file_name,temp->r.size,temp->r.cli_ipaddr,temp->r.in_buf,temp->r.time_arrival);
 
 
 
@@ -210,21 +198,21 @@ void *thread_serve()
 
 		unsigned int ip=r.cli_ipaddr;
   
-    
+    /* code adapted from stackoverflow.com */
     
 		unsigned char bytes[4];
 		bytes[0] = ip & 0xFF;
 		bytes[1] = (ip >> 8) & 0xFF;
 		bytes[2] = (ip >> 16) & 0xFF;
 		bytes[3] = (ip >> 24) & 0xFF;
-
+ /* end of code adapted from stackoverflow.com */
 		
 		//struct request r= *((struct request *)arg);
-		if(debug_flag==0)
+		if(debug_flag==0&& log_flag==1)
 		{
 			
 			FILE * file_des=fopen(file,"a"); 
-			printf("\n in  serving thread \n");
+			//printf("\n in  serving thread \n");
 		
 			fprintf(file_des,"%d.%d.%d.%d\t-\t ", bytes[0], bytes[1], bytes[2], bytes[3]);
 			fprintf(file_des,"%s\t %s\t %s \t status\t %d\n",r.time_arrival,time_serve,r.in_buf,r.size);
@@ -232,7 +220,7 @@ void *thread_serve()
 			fclose(file_des);
 		}
               
-		else
+		else if(debug_flag==1)
 		{  
 			printf("\n%d.%d.%d.%d\t-\t %s\t %s\t %s \t status\t %d\n", bytes[0], bytes[1], bytes[2], bytes[3],r.time_arrival,time_serve,r.in_buf,r.size);
 			//fprintf(stdout,"%s\t %s\t %s \t status\t %d\n",r.time_arrival,time_serve,r.in_buf,r.size);
@@ -245,41 +233,41 @@ void *thread_serve()
 		}
 
 	
-		printf("\n in  serving thread copied structure\n");
+		//printf("\n in  serving thread copied structure\n");
 
 		char           in_buf[BUF_SIZE];      
 		char           out_buf[BUF_SIZE];
-		char           *file_name;                 // File name
+		char           *file_name;                 
 		file_name=malloc(sizeof(char *));
 		int acceptfd;
 		unsigned int   fd1;                         
-		unsigned int   buffer_length;                   
+		unsigned int   buffer_length;                    
 		unsigned int   retcode;  
 		int m; 
 
-		printf("\n in  serving thread before copying variables\n");
+		//printf("\n in  serving thread before copying variables\n");
 		acceptfd=r.acceptfd;
 		file_name=r.file_name;
-		printf("\n in  serving thread after copying variables\n");
+		//printf("\n in  serving thread after copying variables\n");
                 
-
-		
-	 	printf("\nin serving thread file name is %s\n",file_name);
+	 	//printf("\nin serving thread file name is %s\n",file_name);
         
       
  
-			
+	
+
 		{	
 
-       /* this part of the code is adapted from http://kturley.com/simple-multi-threaded-web-server-written-in-c-using-pthreads/ */
-
-		printf("\nin serving thread opening file\n");
+       
+		//printf("\nin serving thread opening file\n");
 		
+		/* This part of code adopted from http://kturley.com/simple-multi-threaded-web-server-written-in-c-using-pthreads/ */
+
         	fd1 = open(&file_name[1], O_RDONLY, S_IREAD | S_IWRITE);
 	
  		memset(out_buf, 0, sizeof(out_buf));
    
-		// send reply
+        	
         	if (fd1 == -1)
         	{
 			printf("File %s not found - sending an HTTP 404 \n", &file_name[1]);
@@ -297,33 +285,27 @@ void *thread_serve()
 			else
 		          { strcpy(out_buf, OK_TEXT); }
 		          send(acceptfd, out_buf, strlen(out_buf), 0);
-
-			/* int n;
-printf("hi i am thread \n");
-n = write(acceptfd,"\n message recieved from serving thread of thread pool",51);
-     	if (n < 0) error("ERROR writing to socket");
-     	close(n);
-//pthread_join(t_listener,NULL);
-*/
  
 		          buffer_length = 1;  
 		          while (buffer_length > 0)  
 		          {
-			            buffer_length = read(fd1, out_buf, BUF_SIZE); 
+			            buffer_length = read(fd1, out_buf, BUF_SIZE);
 			            if (buffer_length > 0)   
 	            { 
               send(acceptfd, out_buf, buffer_length, 0);     
-             
-		//printf("\nin serving thread after sending file\n");
-
-// end of adapted code from http://kturley.com/simple-multi-threaded-web-server-written-in-c-using-pthreads/
-
-		pthread_mutex_lock(&sthread_mutex);
+                 
+/* end of code adapted from http://kturley.com/simple-multi-threaded-web-server-written-in-c-using-pthreads/ */
 		
-		free_thread++;	
-		printf("\n got mutex ,incremented number of free threads: %d\n",free_thread);
-		pthread_mutex_unlock(&sthread_mutex);
-		printf("\nin serving thread unlocked mutex at end after updating free threads\n");
+	//printf("\nin serving thread after sending file\n");
+		
+
+		//pthread_mutex_lock(&sthread_mutex);
+		
+		sem_post(&sem);
+		//printf("\n got mutex ,incremented number of free threads: %d\n",free_thread);
+		//pthread_mutex_unlock(&sthread_mutex);
+		//printf("\nafter semaphore post\n");
+		
             }
           }
 }
@@ -349,28 +331,29 @@ void *thread_scheduler(void *arg)
 		{	
 						
 			
-			if(front!=NULL&&free_thread>0)
+			if(front!=NULL)
 			{	
 				
-				printf("\nin sched thread before extracting element\n");
-				printf("\nscheduler locking mutex\n");		
+				sem_wait(&sem);		
+				//printf("\nin sched thread before extracting element\n");
+				//printf("\nscheduler locking mutex\n");		
 				pthread_mutex_lock(&sthread_mutex);
 				pthread_mutex_lock(&qmutex);
 				r2=extract_element();
-				printf("\n popped element in scheduler thread");
+				//printf("\n popped element in scheduler thread");
 				pthread_mutex_unlock(&qmutex);
-				// sleep function
-				printf("\nscheduler unlocked mutex\n");
+				
+				//printf("\nscheduler unlocked mutex\n");
 				// call serving thread from thread pool
 				
-				printf("\nin sched thread before sending to serving thread\n");
+				//printf("\nin sched thread before sending to serving thread\n");
 				
 				pthread_cond_signal(&cond_var);
 				
-				printf("\nin sched thread decremented free thread value : %d\n",free_thread);
+				
 				free_thread--;
 				pthread_mutex_unlock(&sthread_mutex);				
-				printf("\nin sched thread unlocked sthread mutex\n");
+				//printf("\nin sched thread unlocked sthread mutex\n");
 				
 				//thread_serve(&r2);
 				//pthread_create(&t_serve,NULL,&thread_serve,&r);	
@@ -389,7 +372,7 @@ void *thread_scheduler(void *arg)
 	else
 	{
 	//code for SJF scheduling algorithm
-		printf("\n entered SJF scheduling algorithm");
+		//printf("\n entered SJF scheduling algorithm");
 		int shortestjob_fd=0;
 		int min;
 		int a,b;
@@ -398,11 +381,12 @@ void *thread_scheduler(void *arg)
 			temp=front;
 			if (temp==NULL)
 			{
+				
 				continue;
 			}
 			else if(temp->link==NULL) 
 			{
-				printf("\n only one");
+				//printf("\n only one");
 				shortestjob_fd=temp->r.acceptfd;
 			}
 			else
@@ -429,12 +413,10 @@ void *thread_scheduler(void *arg)
 			pthread_mutex_lock(&sthread_mutex);
 			
 			r2=removesjf(shortestjob_fd);
-			printf("extracted element");
+			//printf("extracted element");
 			pthread_cond_signal(&cond_var);
 			pthread_mutex_unlock(&sthread_mutex);
-			//thread_serve(&r2);
-			//code fro calling serving threads from thread pool
-					
+						
 			pthread_mutex_unlock(&qmutex);
 		}
 	
@@ -468,8 +450,7 @@ void *thread_listen(void *arg)
 	int retcode;
 	off_t file_size;
 	char in_buf[BUF_SIZE];
-	//char fln[200];
-	//char *file_name;
+	
 	char *fname=malloc(sizeof(char *));	
 	struct stat st; 
 	int k,j;
@@ -478,22 +459,25 @@ void *thread_listen(void *arg)
 	
 
 
+	
 
 	listen(sockfd,5);								// listens
-	printf("\nin listening thread before listen\n");
-
+	//printf("\nin listening thread before listen\n");
 
 	while(1)     
 	
 	{	
 		
-		printf("\nin listening thread before accept\n");
+		//printf("\nin listening thread before accept\n");
 		acceptfd= accept(sockfd,(struct sockaddr *) &cli_addr,&clilen);
 		if (acceptfd < 0) 
-          	printf("ERROR on accept");
+          	perror("error in accepting");
 
     unsigned int ip=cli_addr.sin_addr.s_addr;
   
+        
+
+
 		time_t now;
                 time(&now);
                 struct tm * ct=localtime(&now); //getting localtime
@@ -501,17 +485,30 @@ void *thread_listen(void *arg)
                 struct timeval tv;
                 strftime(ch, sizeof ch, "[%d/%b/%Y : %H:%M:%S %z]", ct); //format of the timestamp string we need
                 snprintf(time_arrival, sizeof time_arrival, ch, tv.tv_usec); //printing the needed timestamp string
-                //printf("%s\n", buf);
+               
+	
 
 		
+
+
+	/*	FILE * file_des=fopen(file,"a"); 
+	printf("\n in  serving thread \n");
+	
+	
+	fprintf(file_des,"%s\n",time_arrival);
+	
+	fclose(file_des);
 		
+	*/	
+
+
 
 		char *file_name=malloc(sizeof(char *));
 
 		 memset(in_buf, 0, sizeof(in_buf));
 		retcode = recv(acceptfd, in_buf, BUF_SIZE, 0);			
-           
-		printf("\nin listening thread before getting file name\n");
+            
+		//printf("\nin listening thread before getting file name\n");
 		
 		if (retcode < 0)
 		{ 
@@ -550,15 +547,16 @@ void *thread_listen(void *arg)
 			    if (stat(fname, &st) == 0)
 			    file_size=st.st_size;
 
-			printf(" size of file %s is %zd",file_name,file_size);
+			//printf(" size of file %s is %zd",file_name,file_size);
 
 			
-			printf("\nin listening thread after accepting and before inserting into queue\n");
-			
+			//printf("\nin listening thread after accepting and before inserting into queue\n");
+			//pthread_mutex_lock(&qmutex);
 			insertion(acceptfd,file_name,file_size,ip,time_arrival,in_buf);
-			
-			printf("inserted ino queue");
-			
+			//printf("\n acceptfd is %d, file name is %s, file name is %zd",acceptfd,file_name,file_size);
+			//printf("inserted ino queue");
+			//pthread_mutex_unlock(&qmutex);
+			//printf("newsockfd in thread is : %d",newsockfd);
 		}
 		else
 		{
@@ -569,7 +567,9 @@ void *thread_listen(void *arg)
 	}				
 
 
-    
+
+	
+   
 }
 
 
@@ -584,14 +584,15 @@ int main(int argc, char *args[])
 	
 	
 
-	int portnum=8080,threadnum=5,sleep_time=80;
+	int portnum=8080,threadnum=4,sleep_time=60;
 	int i;
-	int help_flag=0,log_flag=0,dir_flag=0,time_flag,threadnum_flag=0;
+	int help_flag=0,dir_flag=0,time_flag,threadnum_flag=0;
 	
 	// Parser code
 	for(i=0;i<argc;i++)
 	{
-				
+		//printf("\ncomparing%d",i);
+		
 		if(strcmp(args[i],"-h")==0)
 		{
 			help_flag=1;
@@ -638,7 +639,8 @@ int main(int argc, char *args[])
 	
 	}
 	
-	free_thread=threadnum;
+	//free_thread=threadnum;
+	sem_init(&sem,0,threadnum);
 
 //printf( "\n debug : %d, help: %d, log: %d, file name : %s port num : %d, dir : %d dir name: %s, time :%d ,thread num : %d, sched : %d",debug_flag,help_flag,log_flag,file,portnum,dir_flag,dir,sleep_time,threadnum,sched_flag);	
 	//Parser code ends
@@ -651,27 +653,29 @@ int main(int argc, char *args[])
 	else if(dir_flag==1)			//changing directory if -d option is specified
 	{
 		if(chdir(dir)<0)
-			perror("\ndirectory doesnt exist");
-			exit(1);
+			{
+				perror("\ndirectory doesnt exist");
+				exit(1);
+			}
 	}
 	
 
 
 	
 	struct sockaddr_in serv_addr;
-	printf("before socket creation");
+	//printf("before socket creation");
 	sockfd = socket(AF_INET, SOCK_STREAM,0);			//creation of socket	
-	printf("\n after socket creation socket id is %d", sockfd);
+	//printf("\n after socket creation socket id is %d", sockfd);
 	if (sockfd < 0) 
-        perror("ERROR opening socket");
+        perror("error creating socket");
 	bzero((char *) &serv_addr, sizeof(serv_addr));
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_addr.s_addr = INADDR_ANY;
 	serv_addr.sin_port =htons(portnum);
-	printf("before bind");
+	//printf("before bind");
 	if (bind(sockfd, (struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0)		//binding socket
-	perror("ERROR on binding");
-	printf("\nafter bind");
+	perror("binding error");
+	//printf("\nafter bind");
 	
 
 
@@ -682,16 +686,23 @@ int main(int argc, char *args[])
 		pthread_create(&t_serve[w],NULL,&thread_serve,NULL); 
      	} 
      
-	    
+	
+	
+     
+    
+   	 
+	
+     
+     
 	ids=sockfd;
-	printf("\n before creating scheduler thread");
-	printf("\nbefore creating thread sockfd is %d",ids);
+	//printf("\n before creating scheduler thread");
+	//printf("\nbefore creating thread sockfd is %d",ids);
 	pthread_create(&t_listener,NULL,&thread_listen,&ids);			//creating listener thread
 	sleep(sleep_time);							// putting scheduler to sleep
 	pthread_create(&t_scheduler,NULL,&thread_scheduler,&sched_flag);	//creating scheduler thread
         pthread_join(t_listener,NULL);
 	pthread_join(t_scheduler,NULL);
-	printf("\nafter join in main");
+	//printf("\nafter join in main");
 	display();
 	close(sockfd);
 	return 0;
